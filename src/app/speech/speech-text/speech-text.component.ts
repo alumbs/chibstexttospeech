@@ -75,9 +75,14 @@ import { SpeechService } from '../services/speech.service';
           max-height: 40vh;
         }
         .highlight-current-word {
-          background: yellow;
+          background: #ff9800 !important;
+          color: #222 !important;
           border-radius: 4px;
           padding: 0 2px;
+          font-weight: bold;
+          box-shadow: 0 0 6px 2px #ffa726;
+          border: 2px solid #e65100;
+          text-shadow: 0 1px 1px #fff, 0 0 2px #e65100;
         }
 
         button {
@@ -248,14 +253,13 @@ export class SpeechTextComponent implements OnInit, AfterViewInit, OnDestroy {
             this.currentWordIndex$.subscribe(wordIndex => {
                 this.currentWordIndex = wordIndex;
                 this.updateHighlightedText();
-                if (wordIndex >= 0) {
-                    setTimeout(() => this.scrollCurrentWordIntoView(), 0);
-                }
             })
         );
     }
 
     private updateHighlightedText(): void {
+        // Debug: log currentWordIndex
+        console.log('Current word index:', this.currentWordIndex);
         // Split the text into words and wrap the current word in a span
         const words = this.msg.split(/(\s+)/); // Keep spaces as tokens
         let html = '';
@@ -273,6 +277,8 @@ export class SpeechTextComponent implements OnInit, AfterViewInit, OnDestroy {
             }
         }
         this.highlightedText = html;
+        // Ensure scroll runs after DOM updates
+        setTimeout(() => this.scrollCurrentWordIntoView(), 0);
     }
 
     private escapeHtml(text: string): string {
