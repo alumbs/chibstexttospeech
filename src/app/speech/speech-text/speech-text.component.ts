@@ -1,4 +1,5 @@
 import {
+    AfterViewInit,
     ChangeDetectionStrategy,
     Component,
     ElementRef,
@@ -13,11 +14,15 @@ import { SpeechService } from '../services/speech.service';
     selector: 'app-speech-text',
     template: `
       <ng-container>
-        <textarea
-          name="text"
-          [(ngModel)]="msg"
-          (change)="textChanged$.next()"
-        ></textarea>
+        <div
+          #textArea
+          class="speech-text-area"
+          contenteditable="true"
+          [innerHTML]="highlightedText"
+          (input)="onInput($event)"
+          (blur)="onBlur()"
+          spellcheck="true"
+        ></div>
         
         <!-- Progress Bar -->
         <div class="progress-container" *ngIf="(isSpeaking$ | async) || (progress$ | async)! > 0">
@@ -53,8 +58,26 @@ import { SpeechService } from '../services/speech.service';
           outline: 0;
         }
 
-        textarea {
+        .speech-text-area {
           height: 20rem;
+          width: 100%;
+          display: block;
+          margin: 10px 0;
+          padding: 10px;
+          border: 0;
+          font-size: 2rem;
+          background: #f7f7f7;
+          outline: 0;
+          overflow-y: auto;
+          white-space: pre-wrap;
+          word-break: break-word;
+          min-height: 120px;
+          max-height: 40vh;
+        }
+        .highlight-current-word {
+          background: yellow;
+          border-radius: 4px;
+          padding: 0 2px;
         }
 
         button {
@@ -158,7 +181,7 @@ import { SpeechService } from '../services/speech.service';
     ],
     changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class SpeechTextComponent implements OnInit, OnDestroy {
+export class SpeechTextComponent implements OnInit, AfterViewInit, OnDestroy {
     @ViewChild('stop', { static: true, read: ElementRef })
     btnStop!: ElementRef<HTMLButtonElement>;
 
@@ -168,21 +191,29 @@ export class SpeechTextComponent implements OnInit, OnDestroy {
     @ViewChild('pause', { static: true, read: ElementRef })
     btnPause!: ElementRef<HTMLButtonElement>;
 
+    @ViewChild('textArea', { static: true, read: ElementRef })
+    textArea!: ElementRef<HTMLDivElement>;
+
     textChanged$ = new Subject<void>();
     subscription = new Subscription();
     msg = 'Hello! I love JavaScript 👍';
+    highlightedText = '';
     isPaused$: Observable<boolean>;
     isSpeaking$: Observable<boolean>;
     progress$: Observable<number>;
+    currentWordIndex$: Observable<number>;
+    currentWordIndex = -1;
 
     constructor(private speechService2: SpeechService) {
         this.isPaused$ = this.speechService2.isPaused$;
         this.isSpeaking$ = this.speechService2.isSpeaking$;
         this.progress$ = this.speechService2.progress$;
+        this.currentWordIndex$ = this.speechService2.currentWordIndex$;
     }
 
     ngOnInit(): void {
         this.speechService2.updateSpeech({ name: 'text', value: this.msg });
+        this.updateHighlightedText();
 
         const btnStop$ = fromEvent(this.btnStop.nativeElement, 'click').pipe(
             map(() => false)
@@ -204,8 +235,73 @@ export class SpeechTextComponent implements OnInit, OnDestroy {
         );
 
         this.subscription.add(
-            this.textChanged$.pipe(tap(() => this.speechService2.updateSpeech({ name: 'text', value: this.msg }))).subscribe(),
+            this.textChanged$.pipe(tap(() => {
+                this.speechService2.updateSpeech({ name: 'text', value: this.msg });
+                this.updateHighlightedText();
+            })).subscribe(),
         );
+    }
+
+    ngAfterViewInit(): void {
+        // Subscribe to current word index changes for highlight
+        this.subscription.add(
+            this.currentWordIndex$.subscribe(wordIndex => {
+                this.currentWordIndex = wordIndex;
+                this.updateHighlightedText();
+                if (wordIndex >= 0) {
+                    setTimeout(() => this.scrollCurrentWordIntoView(), 0);
+                }
+            })
+        );
+    }
+
+    private updateHighlightedText(): void {
+        // Split the text into words and wrap the current word in a span
+        const words = this.msg.split(/(\s+)/); // Keep spaces as tokens
+        let html = '';
+        let wordCounter = 0;
+        for (let i = 0; i < words.length; i++) {
+            if (!words[i].trim()) {
+                html += words[i];
+            } else {
+                if (wordCounter === this.currentWordIndex) {
+                    html += `<span class="highlight-current-word">${this.escapeHtml(words[i])}</span>`;
+                } else {
+                    html += this.escapeHtml(words[i]);
+                }
+                wordCounter++;
+            }
+        }
+        this.highlightedText = html;
+    }
+
+    private escapeHtml(text: string): string {
+        return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    private scrollCurrentWordIntoView(): void {
+        // Scroll the highlighted word into view if needed
+        const container = this.textArea.nativeElement;
+        const highlight = container.querySelector('.highlight-current-word') as HTMLElement;
+        if (highlight) {
+            const containerRect = container.getBoundingClientRect();
+            const highlightRect = highlight.getBoundingClientRect();
+            if (highlightRect.top < containerRect.top || highlightRect.bottom > containerRect.bottom) {
+                highlight.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+            }
+        }
+    }
+
+    onInput(event: Event): void {
+        // Update msg from contenteditable div (strip HTML)
+        const text = (event.target as HTMLElement).innerText;
+        this.msg = text;
+        this.textChanged$.next();
+    }
+
+    onBlur(): void {
+        // Ensure model stays in sync with view
+        this.updateHighlightedText();
     }
 
     togglePauseResume(): void {

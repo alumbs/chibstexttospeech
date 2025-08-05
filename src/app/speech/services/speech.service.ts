@@ -10,11 +10,13 @@ export class SpeechService {
     private isSpeaking = new BehaviorSubject<boolean>(false);
     private isPaused = new BehaviorSubject<boolean>(false);
     private progress = new BehaviorSubject<number>(0);
+    private currentWordIndex = new BehaviorSubject<number>(-1);
     
     // Expose observables for components to subscribe to
     readonly isSpeaking$ = this.isSpeaking.asObservable();
     readonly isPaused$ = this.isPaused.asObservable();
     readonly progress$ = this.progress.asObservable();
+    readonly currentWordIndex$ = this.currentWordIndex.asObservable();
     
     constructor(private ngZone: NgZone) {}
 
@@ -88,6 +90,7 @@ export class SpeechService {
         speech.onstart = () => {
             this.ngZone.run(() => {
                 this.progress.next(0);
+                this.currentWordIndex.next(0);
             });
         };
         
@@ -96,6 +99,11 @@ export class SpeechService {
                 if (textLength > 0) {
                     const progressPercent = (event.charIndex / textLength) * 100;
                     this.progress.next(Math.min(progressPercent, 100));
+                    
+                    // Calculate word index from character index
+                    const textUpToIndex = speech.text.substring(0, event.charIndex);
+                    const wordIndex = textUpToIndex.trim().split(/\s+/).length - 1;
+                    this.currentWordIndex.next(Math.max(0, wordIndex));
                 }
             });
         };
@@ -105,8 +113,12 @@ export class SpeechService {
                 this.isSpeaking.next(false);
                 this.isPaused.next(false);
                 this.progress.next(100);
+                this.currentWordIndex.next(-1);
                 // Reset progress after a short delay
-                setTimeout(() => this.progress.next(0), 1000);
+                setTimeout(() => {
+                    this.progress.next(0);
+                    this.currentWordIndex.next(-1);
+                }, 1000);
             });
         };
         
@@ -115,6 +127,7 @@ export class SpeechService {
                 this.isSpeaking.next(false);
                 this.isPaused.next(false);
                 this.progress.next(0);
+                this.currentWordIndex.next(-1);
             });
         };
         
