@@ -1,4 +1,5 @@
-import { Injectable } from '@angular/core';
+import { Injectable, NgZone } from '@angular/core';
+import { BehaviorSubject } from 'rxjs';
 import { SpeechProperties } from '../interfaces/speech.interface';
 
 @Injectable({
@@ -6,6 +7,16 @@ import { SpeechProperties } from '../interfaces/speech.interface';
 })
 export class SpeechService {
     private voices: SpeechSynthesisVoice[] = [];
+    private isSpeaking = new BehaviorSubject<boolean>(false);
+    private isPaused = new BehaviorSubject<boolean>(false);
+    private progress = new BehaviorSubject<number>(0);
+    
+    // Expose observables for components to subscribe to
+    readonly isSpeaking$ = this.isSpeaking.asObservable();
+    readonly isPaused$ = this.isPaused.asObservable();
+    readonly progress$ = this.progress.asObservable();
+    
+    constructor(private ngZone: NgZone) {}
 
     updateSpeech(property: SpeechProperties): void {
         const { name, value } = property;
@@ -28,13 +39,39 @@ export class SpeechService {
     }
 
     toggle(startOver = true): void {
+        // If we're paused and trying to speak, just resume
+        if (this.isPaused.value && startOver) {
+            this.resume();
+            return;
+        }
+        
         const speech = this.makeRequest();
         speechSynthesis.cancel();
+        
         if (startOver) {
             speechSynthesis.speak(speech);
+            this.isSpeaking.next(true);
+            this.isPaused.next(false);
+        } else {
+            this.isSpeaking.next(false);
+            this.isPaused.next(false);
         }
     }
 
+    pause(): void {
+        if (speechSynthesis.speaking && !speechSynthesis.paused) {
+            speechSynthesis.pause();
+            this.isPaused.next(true);
+        }
+    }
+    
+    resume(): void {
+        if (speechSynthesis.speaking && speechSynthesis.paused) {
+            speechSynthesis.resume();
+            this.isPaused.next(false);
+        }
+    }
+    
     private makeRequest() {
         const speech = new SpeechSynthesisUtterance();
         speech.text = localStorage.getItem('text') || '';
@@ -44,6 +81,43 @@ export class SpeechService {
         if (voice) {
             speech.voice = voice;
         }
+        
+        const textLength = speech.text.length;
+        
+        // Add event listeners to track speech status and progress
+        speech.onstart = () => {
+            this.ngZone.run(() => {
+                this.progress.next(0);
+            });
+        };
+        
+        speech.onboundary = (event) => {
+            this.ngZone.run(() => {
+                if (textLength > 0) {
+                    const progressPercent = (event.charIndex / textLength) * 100;
+                    this.progress.next(Math.min(progressPercent, 100));
+                }
+            });
+        };
+        
+        speech.onend = () => {
+            this.ngZone.run(() => {
+                this.isSpeaking.next(false);
+                this.isPaused.next(false);
+                this.progress.next(100);
+                // Reset progress after a short delay
+                setTimeout(() => this.progress.next(0), 1000);
+            });
+        };
+        
+        speech.onerror = () => {
+            this.ngZone.run(() => {
+                this.isSpeaking.next(false);
+                this.isPaused.next(false);
+                this.progress.next(0);
+            });
+        };
+        
         return speech;
     }
 }
