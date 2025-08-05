@@ -258,8 +258,6 @@ export class SpeechTextComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     private updateHighlightedText(): void {
-        // Debug: log currentWordIndex
-        console.log('Current word index:', this.currentWordIndex);
         // Split the text into words and wrap the current word in a span
         const words = this.msg.split(/(\s+)/); // Keep spaces as tokens
         let html = '';
